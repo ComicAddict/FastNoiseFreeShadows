@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <random>
 
+#include <omp.h>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -163,6 +165,7 @@ void calculateShadow(Ground ground, Sphere& s, Light& l) {
     float projectSize = s.r * ratio;
 
     printf("projection ratio: %f\n", ratio);
+#pragma omp parallel 
     for (int i = 0; i < ground.w * ground.h; i++) {
         unsigned char br = 255;
         int x = i % ground.w;
@@ -223,7 +226,8 @@ void calculateShadow(Ground& ground, Sphere& s, Light& l, std::vector<Vertex>& p
     float ratio = distToLight / distToSphere;
     float projectSize = s.r * ratio;
 
-    printf("projection ratio: %f\n", ratio);
+#pragma omp parallel 
+    //printf("projection ratio: %f\n", ratio);
     for (int i = 0; i < ground.w * ground.h; i++) {
         unsigned char br = 255;
         int x = i % ground.w;
@@ -607,11 +611,11 @@ int main() {
         }
         ImGui::Checkbox("Axis", &ax);
         
-        if (ImGui::DragFloat("Ground Size", &g.size, 0.1f)) { change = true; }
-        if (ImGui::DragFloat("Light Size", &l.size, 0.1f, 0.01f)) { change = true; }
-        if (ImGui::DragFloat("Sphere Size", &s.r, 0.1f, 0.01f)) { change = true; }
-        if (ImGui::DragFloat3("Sphere Loc", &s.pos[0], 0.1f, 0.01f)) { change = true; }
-        if (ImGui::DragFloat3("Light Loc", &l.pos[0], 0.1f, 0.01f)) { change = true; }
+        if (ImGui::DragFloat("Ground Size", &g.size, 0.01f)) { change = true; }
+        if (ImGui::DragFloat("Light Size", &l.size, 0.01f, 0.01f)) { change = true; }
+        if (ImGui::DragFloat("Sphere Size", &s.r, 0.01f, 0.01f)) { change = true; }
+        if (ImGui::DragFloat3("Sphere Loc", &s.pos[0], 0.01f, 0.01f)) { change = true; }
+        if (ImGui::DragFloat3("Light Loc", &l.pos[0], 0.01f, 0.01f)) { change = true; }
         if (ImGui::DragInt("Ground Tex Res", &g.w, 4.0f, 1)) { change = true; }
         
         if(change) {
