@@ -414,7 +414,7 @@ int main() {
 
     float circVert[99];
     unsigned int circIndex[96];
-    generateCircle(circVert, circIndex, 3.0f);
+    generateCircle(circVert, circIndex, 1.0f);
     for (int i = 0; i < 32; i++)
         printf("%i, %i, %i\n", circIndex[3 * i], circIndex[3 * i + 1], circIndex[3 * i + 2]);
     unsigned int VBO_c, VAO_c, EBO_c;
@@ -669,7 +669,7 @@ int main() {
         lightShader.setMat4("projection", projection);
         
         model = glm::translate(model, l.pos);
-        model = glm::scale(model, glm::vec3(l.size / g.size));
+        model = glm::scale(model, glm::vec3(l.size));
         lightShader.setMat4("model", model);
         lightShader.setMat4("view", view);
         lightShader.setVec3("color", glm::vec3(1.0f,1.0f,1.0f));
@@ -679,7 +679,7 @@ int main() {
         for (int i = 0; i < S.size(); i++) {
             model = glm::mat4(1.0f);
             model = glm::translate(model, S[i].pos);
-            model = glm::scale(model, glm::vec3(2 * S[i].r / g.size));
+            model = glm::scale(model, glm::vec3(S[i].r));
             lightShader.setVec3("color", glm::vec3(0.5f-i * 0.05f));
             lightShader.setMat4("model", model);
             glBindVertexArray(VAO_c);
