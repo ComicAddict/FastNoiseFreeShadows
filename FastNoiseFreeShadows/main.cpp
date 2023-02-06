@@ -28,6 +28,12 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void mouse_button_callback(GLFWwindow* window, int button, int action, int modsdouble);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
+/*
+    TODO:
+    Spheres instead of circles
+    Sphere UV-s and get shadows on each circle/sphere
+*/
+
 glm::vec3 camPos = glm::vec3(10.0f, 10.0f, 10.0f);
 glm::vec3 camFront = glm::vec3(-1.0f, -1.0f, -1.0f);
 glm::vec3 camUp = glm::vec3(0.0f, 0.0f, 1.0f);
