@@ -187,7 +187,7 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l) {
         if (rmax < r)
             rmax = r;
     }
-    float a_max = pow(fmin(r1, rmax), 2);
+    float a_max = pow(r1, 2);
 #pragma omp parallel
     {
         
