@@ -133,6 +133,21 @@ void generatePlane(float* data, float size) {
     };
 }
 
+void generateCircle(float* data, unsigned int* indices, float rad) {
+    
+    for (int i = 0; i < 32; i++) {
+        data[3 * i] = rad * cos(i * PI/16);
+        data[3 * i + 1] = rad * sin(i * PI / 16);
+        data[3 * i + 2] = 0.0f;
+        indices[3 * i] = i;
+        indices[3 * i + 1] = (i + 1) % 32;
+        indices[3 * i + 2] = 32;
+    }
+    data[96] = 0.0f;
+    data[97]= 0.0f;
+    data[98] = 0.0f;
+}
+
 void updateBufferData(unsigned int& bufIndex, std::vector<glm::vec3>& data) {
     glBindBuffer(GL_ARRAY_BUFFER, bufIndex);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * data.size(), &data[0], GL_DYNAMIC_DRAW);
@@ -156,60 +171,14 @@ struct Ground {
     unsigned char* tex;
 };
 
-void calculateShadow(Ground ground, Sphere& s, Light& l) {
-    delete ground.tex;
-    ground.tex = new unsigned char[ground.w * ground.h * 3];
-    
-    float resx = ground.size / ground.w;
-    float resy = ground.size / ground.h;
-
-    float distToSphere = s.pos.z;
-    float distToLight = l.pos.z;
-    float ratio = distToLight / distToSphere;
-    float projectSize = s.r * ratio;
-
-    
-    #pragma omp parallel 
-    {
-        for (int i = 0; i < ground.w * ground.h; i++) {
-            unsigned char br = 255;
-            int x = i % ground.w;
-            int y = i / ground.w;
-            glm::vec3 p = glm::vec3(x * resx, y * resy, 0.0f) - glm::vec3(ground.size / 2.0f, ground.size / 2.0f, 0.0f);
-
-            glm::vec3 dir = p - s.pos;
-            dir *= ratio;
-
-            glm::vec3 projectCenter = p + dir;
-
-            glm::vec2 l1 = glm::vec2(l.pos.x - l.size / 2.0f, l.pos.y - l.size / 2.0f);
-            glm::vec2 l2 = glm::vec2(l.pos.x + l.size / 2.0f, l.pos.y + l.size / 2.0f);
-
-            glm::vec2 p1 = glm::vec2(projectCenter.x - projectSize, projectCenter.y - projectSize);
-            glm::vec2 p2 = glm::vec2(projectCenter.x + projectSize, projectCenter.y + projectSize);
-
-            float ax = fmin(l2.x, p2.x) - fmax(l1.x, p1.x);
-            float ay = fmin(l2.y, p2.y) - fmax(l1.y, p1.y);
-            if (ax > 0 && ay > 0) {
-                br = 255 * (1.0f - (ax * ay) / (l.size * l.size));
-            }
-
-            ground.tex[3 * i] = br;
-            ground.tex[3 * i + 1] = br;
-            ground.tex[3 * i + 2] = br;
-        }
-    }
-}
-
 
 void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l) {
     delete[] ground.tex;
     ground.tex = new unsigned char[ground.w * ground.h * 3];
-
     float resx = ground.size / ground.w;
     float resy = ground.size / ground.h;
 
-#pragma omp parallel 
+
     {
         for (int i = 0; i < ground.w * ground.h; i++) {
             unsigned char br = 255;
@@ -221,39 +190,46 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l) {
             glm::vec3 p = glm::vec3(x * resx, y * resy, 0.0f) - glm::vec3(ground.size / 2.0f, ground.size / 2.0f, 0.0f);
 
             for (int j = 0; j < s.size(); j++) {
-                
+
 
                 float distToSphere = s[j].pos.z;
                 float ratio = distToLight / distToSphere;
-                float projectSize = s[j].r * ratio;
+                float r2 = s[j].r * ratio;
 
                 glm::vec3 dir = p - s[j].pos;
                 dir *= ratio;
                 glm::vec3 projectCenter = p - dir;
+                float d = glm::length(projectCenter - l.pos);
+                float r1 = l.size;
+                float a_max = pow(fmax(r1, r2), 2);
 
-                glm::vec3 l1(l.pos.x - l.size / 2.0f, l.pos.y - l.size / 2.0f, l.pos.z);
-                glm::vec3 l2(l.pos.x + l.size / 2.0f, l.pos.y + l.size / 2.0f, l.pos.z);
-
-                glm::vec3 p1(projectCenter.x - projectSize, projectCenter.y - projectSize, l.pos.z);
-                glm::vec3 p2(projectCenter.x + projectSize, projectCenter.y + projectSize, l.pos.z);
-
-                double ax = fmin(l2.x, p2.x) - fmax(l1.x, p1.x);
-                double ay = fmin(l2.y, p2.y) - fmax(l1.y, p1.y);
-                if (ax > 0 && ay > 0) {
-                    b = ((ax * ay) / (l.size * l.size));
+                if (d > r2 + r1) {
+                    b = 0;
                 }
-                a += b;
+                else if (d <= (r1 - r2) && r1 >= r2) {
+                    b = pow(r2, 2) / a_max;
+                }
+                else if (d <= (r1 - r2) && r2 >= r1) {
+                    b = pow(r1, 2) / a_max;
+                }
+                else {
+                    float alpha = acos((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d)) * 2;
+                    float beta = acos((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d)) * 2;
+                    float a1 = 0.5 * beta * r2 * r2 - 0.5f * r2 * r2 * sin(beta);
+                    float a2 = 0.5 * alpha * r1 * r1 - 0.5f * r1 * r1 * sin(alpha);
+                    b = a1 + a2;
+                }
+                a = a + b - a * b;
             }
             if (a > 1.0f)
                 a = 1.0f;
-            br = 255 *  (1.0f-a);
+            br = 255 * (1.0f - a);
             ground.tex[3 * i] = br;
             ground.tex[3 * i + 1] = br;
             ground.tex[3 * i + 2] = br;
         }
     }
 }
-
 
 void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l, std::vector<float> vals) {
     delete[] ground.tex;
@@ -277,22 +253,30 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l, std::vect
 
                 float distToSphere = s[j].pos.z;
                 float ratio = distToLight / distToSphere;
-                float projectSize = s[j].r * ratio;
+                float r2 = s[j].r * ratio;
 
                 glm::vec3 dir = p - s[j].pos;
                 dir *= ratio;
                 glm::vec3 projectCenter = p - dir;
-
-                glm::vec3 l1(l.pos.x - l.size / 2.0f, l.pos.y - l.size / 2.0f, l.pos.z);
-                glm::vec3 l2(l.pos.x + l.size / 2.0f, l.pos.y + l.size / 2.0f, l.pos.z);
-
-                glm::vec3 p1(projectCenter.x - projectSize, projectCenter.y - projectSize, l.pos.z);
-                glm::vec3 p2(projectCenter.x + projectSize, projectCenter.y + projectSize, l.pos.z);
-
-                double ax = fmin(l2.x, p2.x) - fmax(l1.x, p1.x);
-                double ay = fmin(l2.y, p2.y) - fmax(l1.y, p1.y);
-                if (ax > 0 && ay > 0) {
-                    b = ((ax * ay) / (l.size * l.size));
+                float d = glm::length(projectCenter - l.pos);
+                float r1 = l.size;
+                float a_max = pow(fmax(r1, r2),2);
+                
+                if (d > r2 + r1) {
+                    b = 0;
+                }
+                else if (d <= (r1 - r2) && r1 >= r2) {
+                    b = pow(r2, 2) / a_max;
+                }
+                else if (d <= (r1 - r2) && r2 >= r1) {
+                    b = pow(r1, 2) / a_max;
+                }
+                else {
+                    float alpha = acos((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d)) * 2;
+                    float beta = acos((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d)) * 2;
+                    float a1 = 0.5 * beta * r2 * r2 - 0.5f * r2 * r2 * sin(beta);
+                    float a2 = 0.5 * alpha * r1 * r1 - 0.5f * r1 * r1 * sin(alpha);
+                    b = a1 + a2;
                 }
                 a = a + b - a * b;
             }
@@ -428,6 +412,29 @@ int main() {
 
     // texture stuff
 
+    float circVert[99];
+    unsigned int circIndex[96];
+    generateCircle(circVert, circIndex, 3.0f);
+    for (int i = 0; i < 32; i++)
+        printf("%i, %i, %i\n", circIndex[3 * i], circIndex[3 * i + 1], circIndex[3 * i + 2]);
+    unsigned int VBO_c, VAO_c, EBO_c;
+    glGenVertexArrays(1, &VAO_c);
+    glGenBuffers(1, &VBO_c);
+    glGenBuffers(1, &EBO_c);
+
+    glBindVertexArray(VAO_c);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_c);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(circVert), circVert, GL_DYNAMIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO_c);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(circIndex), circIndex, GL_DYNAMIC_DRAW);
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    Ground g;
+    g.size = 20.0f;
     float vertices[] = {
         // positions          // texture coords
          0.5f,  0.5f, 0.0f,   1.0f, 1.0f, // top right
@@ -435,16 +442,16 @@ int main() {
         -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, // bottom left
         -0.5f,  0.5f, 0.0f,   0.0f, 1.0f  // top left 
     };
-
-    Ground g;
-    g.size = 20.0f;
-
     generatePlane(vertices, g.size);
-
+    
     unsigned int indices[] = {
-        0, 1, 3, // first triangle
-        1, 2, 3  // second triangle
+        0,1,3,
+        1,2,3
     };
+
+    
+
+    //generateCircle(vertices, indices, 1.0f);
     unsigned int VBO, VAO, EBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
@@ -666,8 +673,8 @@ int main() {
         lightShader.setMat4("model", model);
         lightShader.setMat4("view", view);
         lightShader.setVec3("color", glm::vec3(1.0f,1.0f,1.0f));
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glBindVertexArray(VAO_c);
+        glDrawElements(GL_TRIANGLES, 96, GL_UNSIGNED_INT, 0);
 
         for (int i = 0; i < S.size(); i++) {
             model = glm::mat4(1.0f);
@@ -675,8 +682,8 @@ int main() {
             model = glm::scale(model, glm::vec3(2 * S[i].r / g.size));
             lightShader.setVec3("color", glm::vec3(0.5f-i * 0.05f));
             lightShader.setMat4("model", model);
-            glBindVertexArray(VAO);
-            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            glBindVertexArray(VAO_c);
+            glDrawElements(GL_TRIANGLES, 96, GL_UNSIGNED_INT, 0);
         }
         
 
