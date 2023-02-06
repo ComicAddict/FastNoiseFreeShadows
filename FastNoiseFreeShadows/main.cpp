@@ -177,77 +177,30 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l) {
     ground.tex = new unsigned char[ground.w * ground.h * 3];
     float resx = ground.size / ground.w;
     float resy = ground.size / ground.h;
-
-
-    {
-        for (int i = 0; i < ground.w * ground.h; i++) {
-            unsigned char br = 255;
-            double a = 0;
-            double b = 0;
-            int x = i % ground.w;
-            int y = i / ground.w;
-            float distToLight = l.pos.z;
-            glm::vec3 p = glm::vec3(x * resx, y * resy, 0.0f) - glm::vec3(ground.size / 2.0f, ground.size / 2.0f, 0.0f);
-
-            for (int j = 0; j < s.size(); j++) {
-
-
-                float distToSphere = s[j].pos.z;
-                float ratio = distToLight / distToSphere;
-                float r2 = s[j].r * ratio;
-
-                glm::vec3 dir = p - s[j].pos;
-                dir *= ratio;
-                glm::vec3 projectCenter = p - dir;
-                float d = glm::length(projectCenter - l.pos);
-                float r1 = l.size;
-                float a_max = pow(fmax(r1, r2), 2);
-
-                if (d > r2 + r1) {
-                    b = 0;
-                }
-                else if (d <= (r1 - r2) && r1 >= r2) {
-                    b = pow(r2, 2) / a_max;
-                }
-                else if (d <= (r1 - r2) && r2 >= r1) {
-                    b = pow(r1, 2) / a_max;
-                }
-                else {
-                    float alpha = acos((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d)) * 2;
-                    float beta = acos((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d)) * 2;
-                    float a1 = 0.5 * beta * r2 * r2 - 0.5f * r2 * r2 * sin(beta);
-                    float a2 = 0.5 * alpha * r1 * r1 - 0.5f * r1 * r1 * sin(alpha);
-                    b = a1 + a2;
-                }
-                a = a + b - a * b;
-            }
-            if (a > 1.0f)
-                a = 1.0f;
-            br = 255 * (1.0f - a);
-            ground.tex[3 * i] = br;
-            ground.tex[3 * i + 1] = br;
-            ground.tex[3 * i + 2] = br;
-        }
+    float r1 = l.size;
+    float distToLight = l.pos.z;
+    float rmax = 0;
+    for (int j = 0; j < s.size(); j++) {
+        float distToSphere = s[j].pos.z;
+        float ratio = distToLight / distToSphere;
+        float r = s[j].r * ratio;
+        if (rmax < r)
+            rmax = r;
     }
-}
-
-void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l, std::vector<float> vals) {
-    delete[] ground.tex;
-    ground.tex = new unsigned char[ground.w * ground.h * 3];
-    float resx = ground.size / ground.w;
-    float resy = ground.size / ground.h;
-
-#pragma omp parallel 
+    float a_max = pow(fmin(r1, rmax), 2);
+#pragma omp parallel
     {
+        
         for (int i = 0; i < ground.w * ground.h; i++) {
             unsigned char br = 255;
             double a = 0;
             double b = 0;
             int x = i % ground.w;
             int y = i / ground.w;
-            float distToLight = l.pos.z;
+            
             glm::vec3 p = glm::vec3(x * resx, y * resy, 0.0f) - glm::vec3(ground.size / 2.0f, ground.size / 2.0f, 0.0f);
-
+            int ca = 0;
+            
             for (int j = 0; j < s.size(); j++) {
 
 
@@ -259,29 +212,34 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l, std::vect
                 dir *= ratio;
                 glm::vec3 projectCenter = p - dir;
                 float d = glm::length(projectCenter - l.pos);
-                float r1 = l.size;
-                float a_max = pow(fmax(r1, r2),2);
-                
+                int ca = 0;
                 if (d > r2 + r1) {
                     b = 0;
+                    ca = 0;
                 }
                 else if (d <= (r1 - r2) && r1 >= r2) {
                     b = pow(r2, 2) / a_max;
+                    ca = 1;
                 }
-                else if (d <= (r1 - r2) && r2 >= r1) {
+                else if (d <= (r2 - r1) && r2 >= r1) {
                     b = pow(r1, 2) / a_max;
+                    ca = 2;
                 }
                 else {
                     float alpha = acos((r1 * r1 + d * d - r2 * r2) / (2 * r1 * d)) * 2;
                     float beta = acos((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d)) * 2;
                     float a1 = 0.5 * beta * r2 * r2 - 0.5f * r2 * r2 * sin(beta);
                     float a2 = 0.5 * alpha * r1 * r1 - 0.5f * r1 * r1 * sin(alpha);
-                    b = (a1 + a2)/a_max;
+                    b = (a1 + a2)/(a_max * PI);
+                    ca = 3;
                 }
                 a = a + b - a * b;
+                //if(ca != 0)
+                    //printf("%i, %i: %f, case: %i\n", i % ground.w, i / ground.h, a, ca);
             }
-            if (a > 1.0f)
-                a = 1.0f;
+            
+            //if (a > 1.0f)
+              //  a = 1.0f;
             br = 255 * (1.0f - a);
             ground.tex[3 * i] = br;
             ground.tex[3 * i + 1] = br;
@@ -426,8 +384,8 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    g.w = 512;
-    g.h = 512;
+    g.w = 32;
+    g.h = 32;
     g.tex = new unsigned char[g.w * g.h * 3];
 
     std::vector<Sphere> S;
@@ -650,8 +608,9 @@ int main() {
         ImGui::Checkbox("Axis", &ax);
         
         if (ImGui::DragFloat("Ground Size", &g.size, 0.01f)) { change = true; }
+        if (ImGui::DragInt("Ground Tex Res", &g.w, 4.0f, 1)) { change = true; }
         if (ImGui::DragFloat("Light Size", &l.size, 0.01f, 0.01f)) { change = true; }
-        if (ImGui::DragFloat("Sphere Size", &s.r, 0.01f, 0.01f)) { change = true; }
+        if (ImGui::DragFloat3("Light Loc", &l.pos[0], 0.01f, 0.01f)) { change = true; }
         if (ImGui::TreeNode("Sphere Tree")) {
             ImGui::DragFloat3("Sphere Loc", &s.pos[0], 0.01f, 0.01f);
             ImGui::DragFloat("Sphere Size", &s.r, 0.01f, 0.01f);
@@ -668,8 +627,7 @@ int main() {
             ImGui::TreePop();
         }
         
-        if (ImGui::DragFloat3("Light Loc", &l.pos[0], 0.01f, 0.01f)) { change = true; }
-        if (ImGui::DragInt("Ground Tex Res", &g.w, 4.0f, 1)) { change = true; }
+       
         
         if(change) {
             change = false;
