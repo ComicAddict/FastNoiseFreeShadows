@@ -276,7 +276,7 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l, std::vect
                     float beta = acos((r2 * r2 + d * d - r1 * r1) / (2 * r2 * d)) * 2;
                     float a1 = 0.5 * beta * r2 * r2 - 0.5f * r2 * r2 * sin(beta);
                     float a2 = 0.5 * alpha * r1 * r1 - 0.5f * r1 * r1 * sin(alpha);
-                    b = a1 + a2;
+                    b = (a1 + a2)/a_max;
                 }
                 a = a + b - a * b;
             }
@@ -294,67 +294,6 @@ struct Vertex {
     glm::vec3 p;
     glm::vec3 c;
 };
-
-void calculateShadow(Ground& ground, Sphere& s, Light& l, std::vector<Vertex>& proj) {
-    proj.clear();
-    delete[] ground.tex;
-    ground.tex = new unsigned char[ground.w * ground.h * 3];
-
-    float resx = ground.size / ground.w;
-    float resy = ground.size / ground.h;
-
-    float distToSphere = s.pos.z;
-    float distToLight = l.pos.z;
-    float ratio = distToLight / distToSphere;
-    float projectSize = s.r * ratio;
-
-    
-    //printf("projection ratio: %f\n", ratio);
-    
-    {
-        for (int i = 0; i < ground.w * ground.h; i++) {
-            unsigned char br = 255;
-            int x = i % ground.w;
-            int y = i / ground.w;
-            //printf("Coloring Pixel (%i, %i)\n", x, y);
-            glm::vec3 p = glm::vec3(x * resx, y * resy, 0.0f) - glm::vec3(ground.size / 2.0f, ground.size / 2.0f, 0.0f);
-
-            glm::vec3 dir = p - s.pos;
-            dir *= ratio;
-
-            glm::vec3 projectCenter = p - dir;
-            glm::vec3 c = glm::vec3(1.0f, 0.0f, 0.0f);
-
-
-
-            glm::vec3 l1(l.pos.x - l.size / 2.0f, l.pos.y - l.size / 2.0f, l.pos.z);
-            glm::vec3 l2(l.pos.x + l.size / 2.0f, l.pos.y + l.size / 2.0f, l.pos.z);
-
-            glm::vec3 p1(projectCenter.x - projectSize, projectCenter.y - projectSize, l.pos.z);
-            glm::vec3 p2(projectCenter.x + projectSize, projectCenter.y + projectSize, l.pos.z);
-            
-            proj.push_back({ p, c });
-            proj.push_back({ p1, c });
-            proj.push_back({ p1, c });
-            proj.push_back({ p2, c });
-            proj.push_back({ p2, c });
-            proj.push_back({ p, c });
-            c = glm::vec3(0.0f, 1.0f, 0.0f);
-            proj.push_back({ p, c });
-            proj.push_back({ projectCenter, c });
-            
-            float ax = fmin(l2.x, p2.x) - fmax(l1.x, p1.x);
-            float ay = fmin(l2.y, p2.y) - fmax(l1.y, p1.y);
-            if (ax > 0 && ay > 0) {
-                br = 255 * (1.0f - (ax * ay) / (l.size * l.size));
-            }
-            ground.tex[3 * i] = br;
-            ground.tex[3 * i + 1] = br;
-            ground.tex[3 * i + 2] = br;
-        }
-    }
-
-}
 
 int main() {
     //set glfw
@@ -568,21 +507,6 @@ int main() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    unsigned int VAO_proj;
-    glGenVertexArrays(1, &VAO_proj);
-
-    unsigned int VBO_proj;
-    glGenBuffers(1, &VBO_proj);
-
-    glBindVertexArray(VAO_proj);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_proj);
-    glBufferData(GL_ARRAY_BUFFER, projections.size() * 6 * sizeof(float), &projections[0], GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
     int width, height;
     Shader shader = Shader("C:\\Src\\shaders\\vertFastShadow.glsl", "C:\\Src\\shaders\\fragFastShadow.glsl");
     Shader lightShader = Shader("C:\\Src\\shaders\\vertEmit.glsl", "C:\\Src\\shaders\\fragEmit.glsl");
@@ -701,10 +625,6 @@ int main() {
             glBindVertexArray(VAO_plane);
             glDrawArrays(GL_LINES, 0, 12);
         }
-        if (proj) {
-            glBindVertexArray(VAO_proj);
-            glDrawArrays(GL_LINES, 0, projections.size());
-        }
 
 
         //start of imgui init stuff
@@ -755,17 +675,12 @@ int main() {
             change = false;
             g.h = g.w;
             generatePlane(vertices, g.size);
-            if(proj)
-                calculateShadow(g, s, l, projections);
-            else
-                calculateShadow(g, S, l);
+            calculateShadow(g, S, l);
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
             glBindTexture(GL_TEXTURE_2D, texture1);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g.w, g.h, 0, GL_RGB, GL_UNSIGNED_BYTE, g.tex);
             glGenerateMipmap(GL_TEXTURE_2D);
-            glBindBuffer(GL_ARRAY_BUFFER, VBO_proj);
-            glBufferData(GL_ARRAY_BUFFER, projections.size() * 6 * sizeof(float), &projections[0], GL_DYNAMIC_DRAW);
         }
         ImGui::Checkbox("Bilinear Filter", &bilin);
         if (bilin) {
@@ -779,7 +694,6 @@ int main() {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         }
         
-        ImGui::Checkbox("Projection Debug", &proj);
         ImGui::End();
         ImGui::Render();
         if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
