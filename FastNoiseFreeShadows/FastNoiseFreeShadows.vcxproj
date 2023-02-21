@@ -151,6 +151,7 @@
     <ClInclude Include="..\..\..\..\..\..\..\Include\imgui\imstb_textedit.h" />
     <ClInclude Include="..\..\..\..\..\..\..\Include\imgui\imstb_truetype.h" />
     <ClInclude Include="shader.h" />
+    <ClInclude Include="Sphere.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\..\..\..\..\Include\glad\glad.c" />
@@ -162,6 +163,7 @@
     <ClCompile Include="..\..\..\..\..\..\..\Include\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\..\..\..\..\..\..\Include\imgui\imgui_widgets.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Sphere.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\..\..\..\..\Src\shaders\fragEmit.glsl" />

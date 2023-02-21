@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdlib>
 #include <random>
+#include <unordered_map>
 
 #include <omp.h>
 #include <stdio.h>
@@ -13,6 +14,10 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+#include <glm/gtc/random.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_glfw.h>
@@ -20,7 +25,12 @@
 
 #include <stb/stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tinyobjloader/tiny_obj_loader.h>
+
 #include "shader.h"
+#include "Sphere.h"
+
 int main();
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
@@ -79,6 +89,108 @@ void processInput(GLFWwindow* window)
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+
+struct Vertex {
+    glm::vec3 pos;
+    glm::vec3 col;
+    glm::vec3 normal;
+    //glm::vec2 texCoord;
+
+    bool operator==(const Vertex& other) const {
+        return pos == other.pos;
+    }
+};
+
+struct Object {
+    int index;
+    std::string model_path;
+    unsigned int vao, vbo, ebo;
+    unsigned int wvao, wvbo, webo;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    std::vector<uint32_t> windices;
+    glm::vec3 pos;
+    glm::vec3 scale;
+    float zAngle;
+    int mode;
+};
+
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos)) >> 1);
+        }
+    };
+}
+
+bool loadModel(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, std::string model_path) {
+    tinyobj::ObjReaderConfig reader_config;
+    reader_config.mtl_search_path = "./"; // Path to material files
+
+    tinyobj::ObjReader reader;
+
+    if (!reader.ParseFromFile(model_path, reader_config)) {
+        if (!reader.Error().empty()) {
+            std::cerr << "TinyObjReader: " << reader.Error();
+        }
+        return false;
+    }
+
+    if (!reader.Warning().empty()) {
+        std::cout << "TinyObjReader: " << reader.Warning();
+    }
+
+    auto& attrib = reader.GetAttrib();
+    auto& shapes = reader.GetShapes();
+    auto& materials = reader.GetMaterials();
+
+    // Loop over shapes
+    for (size_t s = 0; s < shapes.size(); s++) {
+        // Loop over faces(polygon)
+        size_t index_offset = 0;
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+            size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+            std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+            // Loop over vertices in the face.
+            for (size_t v = 0; v < fv; v++) {
+                // access to vertex
+                Vertex vert{};
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                vert.pos.x = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
+                vert.pos.y = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
+                vert.pos.z = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
+
+                // Check if `normal_index` is zero or positive. negative = no normal data
+
+                if (idx.normal_index >= 0) {
+                    vert.normal.x = attrib.normals[3 * size_t(idx.normal_index) + 0];
+                    vert.normal.y = attrib.normals[3 * size_t(idx.normal_index) + 1];
+                    vert.normal.z = attrib.normals[3 * size_t(idx.normal_index) + 2];
+                }
+
+                /*
+                // Check if `texcoord_index` is zero or positive. negative = no texcoord data
+                if (idx.texcoord_index >= 0) {
+                    vert.texCoord.x = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
+                    vert.texCoord.y = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+                }
+                */
+                // Optional: vertex colors
+                vert.col.r = attrib.colors[3 * size_t(idx.vertex_index) + 0];
+                vert.col.g = attrib.colors[3 * size_t(idx.vertex_index) + 1];
+                vert.col.b = attrib.colors[3 * size_t(idx.vertex_index) + 2];
+                uniqueVertices[vert] = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(vert);
+                //printf("vert pos: %f, %f, %f, \t index:%i \t col: %f, %f, %f\n", vert.pos.x, vert.pos.y, vert.pos.z, idx.vertex_index, vert.col.r, vert.col.g, vert.col.b );
+                //vertices.push_back(vert);
+                indices.push_back(uniqueVertices[vert]);
+            }
+            index_offset += fv;
+        }
+    }
+    return true;
 }
 
 
@@ -163,6 +275,7 @@ struct Sphere {
     glm::vec3 pos;
     float r;
     float alpha;
+    unsigned char* tex;
 };
 
 struct Light {
@@ -253,11 +366,6 @@ void calculateShadow(Ground& ground, std::vector<Sphere>& s, Light& l) {
         }
     }
 }
-
-struct Vertex {
-    glm::vec3 p;
-    glm::vec3 c;
-};
 
 int main() {
     //set glfw
@@ -405,9 +513,6 @@ int main() {
     Light l{};
     l.pos = glm::vec3(0.0f, 0.0f, 10.f);
     l.size = 5.0f;
-;
-
-    std::vector<Vertex> projections;
 
     calculateShadow(g, S, l);
     
